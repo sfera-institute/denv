@@ -1,0 +1,226 @@
+#!/bin/bash
+
+set -e
+
+#######################################################################################################################
+# COMMANDS
+
+denv-create() {
+    local name="$1"
+    local image="$2"
+    local repo="$(get-repo)"
+
+    if [ "$(docker images "$repo:$name" | wc -l | tr -d ' ')" == '1' ]
+    then
+        log "Creating $name from $image..."
+        docker pull "$image" >/dev/null
+        docker tag "$image" "$repo:$name" >/dev/null
+    fi
+}
+
+denv-deploy() {
+    local name="$1"
+    local repo="$(get-repo)"
+    local shell="$(get-shell)"
+    local read_config_command="$(get-read-config-command)"
+    local root="$(get-root)"
+    local main_command="$(get-main-command)"
+
+    if [ "$(docker inspect "$name" 2>/dev/null)" == '[]' ]
+    then
+        log "Running $name..."
+        local config="$(docker run -ti --rm "$repo:$name" $shell -c "$read_config_command" 2>/dev/null | tr -d '\r\n')"
+        docker run -d -v "$PWD:$root" -w "$root" --name "$name" $config "$repo:$name" $shell -c "$main_command" >/dev/null
+    fi
+}
+
+denv-join() {
+    local name="$1"
+    local shell="$(get-shell)"
+
+    log "Joining $name..."
+    docker exec -ti "$name" $shell
+}
+
+denv-list() {
+    local repo="$(get-repo)"
+    local read_workdir_command="$(get-read-workdir-command)"
+
+    for name in $(docker images --format '{{.Tag}}' "$repo")
+    do
+        local workdir="$(docker exec -ti "$name" $shell -c "$read_workdir_command" 2>/dev/null | tr -d ' ')"
+        echo "$name (${workdir:-inactive})"
+    done
+}
+
+denv-save() {
+    if [ -z "$1" ]
+    then
+        usage '--save NAME'
+    fi
+    local name="$1"
+    local repo="$(get-repo)"
+
+    log "Saving $name..."
+    docker commit "$name" "$repo:$name" >/dev/null
+}
+
+denv-stop() {
+    if [ -z "$1" ]
+    then
+        usage '--stop NAME'
+    fi
+    local name="$1"
+    local repo="$(get-repo)"
+
+    log "Stopping $name..."
+    docker stop "$name" >/dev/null 2>&1 || true
+    docker rm "$name" >/dev/null 2>&1 || true
+}
+
+denv-delete() {
+    if [ -z "$1" ]; then
+        usage '--delete NAME'
+    fi
+    local name="$1"
+    local repo="$(get-repo)"
+
+    denv-stop "$name"
+    log "Deleting $name..."
+    docker rmi "$repo:$name" >/dev/null 2>&1 || true
+}
+
+#######################################################################################################################
+# MAIN
+
+main() {
+    if [ -z "$1" ]; then
+        usage 'NAME [IMAGE] | --list | --save NAME | --stop NAME | --delete NAME'
+    fi
+    local command="$1"
+    local name="$2"
+
+    case "$command" in
+        '--list')
+            denv-list
+            exit
+            ;;
+        '--save')
+            denv-save "$name"
+            exit
+            ;;
+        '--stop')
+            denv-stop "$name"
+            exit
+            ;;
+        '--delete')
+            denv-delete "$name"
+            exit
+            ;;
+    esac
+
+    local name="$1"
+    local image="${2:-$(get-default-image)}"
+
+    denv-create "$name" "$image"
+    denv-deploy "$name"
+    denv-join "$name"
+
+    # If the session ended successfully, save the environment.
+    if [ "$?" == "0" ]
+    then
+        denv-save "$name"
+    fi
+
+    # If no one else is using it, stop the environment.
+    if [ "$(docker inspect -f '{{.ExecIDs}}' "$name")" == '[]' ]
+    then
+        denv-stop "$name"
+    fi
+}
+
+#######################################################################################################################
+# CONFIGURATIONS
+
+get-repo() {
+    echo "${DENV_REPO:-denv}"
+}
+
+get-shell() {
+    echo "${DENV_SHELL:-/bin/bash}"
+}
+
+get-root() {
+    echo "${DENV_ROOT:-/app}"
+}
+
+get-default-image() {
+    echo "${DENV_DEFAULT_IMAGE:-ubuntu:latest}"
+}
+
+get-config-path() {
+    echo "${DENV_CONFIG_PATH:-/.denv.config}"
+}
+
+get-init-path() {
+    echo "${DENV_INIT_PATH:-/.denv.init}"
+}
+
+get-workdir-path() {
+    echo "${DENV_WORKDIR_PATH:-/.denv.workdir}"
+}
+
+get-read-config-command() {
+    echo "cat '$(get-config-path)' 2>/dev/null"
+}
+
+get-main-command() {
+    local init_path="$(get-init-path)"
+
+    echo "
+echo '$PWD' >'$(get-workdir-path)';
+if [ -f '$init_path' ];
+then
+    bash '$init_path';
+fi;
+while true;
+do
+    sleep 1;
+done;
+"
+}
+
+get-read-workdir-command() {
+    echo "cat '$(get-workdir-path)' 2>/dev/null"
+}
+
+get-log() {
+    echo "${DENV_LOG:-1}"
+}
+
+get-log-prefix() {
+    echo "${DENV_LOG_PREFIX:-[denv] }"
+}
+
+log() {
+    local message="$1"
+    local log="$(get-log)"
+    local prefix="$(get-log-prefix)"
+
+    if [ "$log" == "1" ]
+    then
+        echo "$prefix$message"
+    fi
+}
+
+usage() {
+    local prog="$0"
+    local args="$1"
+
+    echo "USAGE: $prog $args"
+    exit 1
+}
+
+#######################################################################################################################
+
+main "$@"
