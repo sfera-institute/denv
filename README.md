@@ -220,38 +220,38 @@ example # Et voilá!
 
 You can change `denv`'s configurations by exporting the right environment variables:
 
-`DENV_REPO`
+- `DENV_REPO`
 
     The image's repository (defaults to `denv`).
 
-`DENV_SHELL`
+- `DENV_SHELL`
 
     The container's shell (default is `/bin/bash`).
 
-`DENV_ROOT`
+- `DENV_ROOT`
 
     The container's working directory (default is `/app`).
 
-`DENV_DEFAULT_IMAGE`
+- `DENV_DEFAULT_IMAGE`
 
     The default image used for new environments (default is `ubuntu:latest`).
 
-`DENV_CONFIG_PATH`
+- `DENV_CONFIG_PATH`
 
     The path used for the container's configuration (default is `/.denv.config`).
 
-`DENV_INIT_PATH`
+- `DENV_INIT_PATH`
 
     The path used for the container's initialization script (default is `/.denv.init`).
 
-`DENV_WORKDIR_PATH`
+- `DENV_WORKDIR_PATH`
 
     The path used for mapping the container to a host directory, used by `denv --list` (default is `/.denv.workdir`).
 
-`DENV_LOG`
+- `DENV_LOG`
 
     The logging status: `0` for off, `1` for on (default is `1`).
 
-`DENV_LOG_PREFIX`
+- `DENV_LOG_PREFIX`
 
     The logging prefix (default is `[denv] `).
